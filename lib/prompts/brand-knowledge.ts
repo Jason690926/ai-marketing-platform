@@ -28,3 +28,5 @@ export const PHOTOGRAPHER_SYSTEM_PROMPT = `
 `.trim()
 
 export const NEGATIVE_PROMPT = `No text, no watermarks, no logos, no people, no plastic 3D render style, no artificial HDR, no over-saturation, no cartoon style.`.trim()
+
+export const LEVEL2_NEGATIVE_PROMPT = `No watermarks, no logos, no people, no plastic 3D render style, no over-saturation, no cartoon style. Do not add any text other than the exact copy provided. Render all Chinese characters accurately and legibly — no garbled, distorted, or invented glyphs.`.trim()
