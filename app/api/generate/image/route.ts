@@ -126,7 +126,7 @@ export async function POST(req: Request) {
         user_id: user.id,
         type: 'image',
         store,
-        purpose: 'post',
+        purpose: 'social_post',
         image_url: imageUrl,
         image_level: 'level1_base',
         aspect_ratio: aspectRatio,
