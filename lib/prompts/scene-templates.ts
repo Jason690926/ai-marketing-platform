@@ -1,5 +1,5 @@
-import type { SceneTemplate, StylePreset } from '@/types'
-import { NEGATIVE_PROMPT } from './brand-knowledge'
+import type { SceneTemplate, StylePreset, AdContent } from '@/types'
+import { NEGATIVE_PROMPT, LEVEL2_NEGATIVE_PROMPT } from './brand-knowledge'
 
 export const SCENE_TEMPLATES: SceneTemplate[] = [
   {
@@ -82,4 +82,62 @@ export function buildPrompt({
 
 export function getSceneById(id: string): SceneTemplate | undefined {
   return SCENE_TEMPLATES.find((s) => s.id === id)
+}
+
+export function buildLevel2Prompt({
+  mode,
+  sceneTemplate,
+  freeformDescription,
+  stylePreset,
+  additionalNotes,
+  adContent,
+}: {
+  mode: 'scene' | 'reference' | 'freeform'
+  sceneTemplate?: SceneTemplate
+  freeformDescription?: string
+  stylePreset: StylePreset
+  additionalNotes?: string
+  adContent: AdContent
+}): string {
+  const parts: string[] = []
+
+  if (mode === 'scene' && sceneTemplate) {
+    parts.push(sceneTemplate.promptBody)
+  } else if (mode === 'freeform' && freeformDescription) {
+    parts.push(
+      `A professional product photograph of a Musterring premium mattress. Scene: ${freeformDescription}. Real photography feel, not CGI or 3D render.`
+    )
+  } else if (mode === 'reference') {
+    parts.push(
+      `A professional product photograph of a Musterring premium mattress, styled in the same composition and atmosphere as the reference image provided. Maintain the same mood, lighting angle, and color palette. Real photography feel.`
+    )
+  } else {
+    parts.push(
+      `A professional product photograph of a Musterring premium mattress. Real photography feel, not CGI or 3D render.`
+    )
+  }
+
+  const styleModifier = STYLE_MODIFIERS[stylePreset]
+  if (styleModifier) parts.push(styleModifier)
+
+  if (additionalNotes) parts.push(`Additional requirement: ${additionalNotes}`)
+
+  const ad: string[] = [
+    'This is a FINISHED advertisement creative. Integrate the following Traditional Chinese marketing copy into the image as clean, professional, highly legible typography. The mattress stays the hero; text must not cover the product.',
+    `Main headline (most prominent): 「${adContent.title}」`,
+  ]
+  if (adContent.subtitle) ad.push(`Subheading (secondary): 「${adContent.subtitle}」`)
+  if (adContent.endorsement) ad.push(`Endorsement badge (small, trustworthy): 「${adContent.endorsement}」`)
+  if (adContent.features && adContent.features.length > 0) {
+    const feats = adContent.features
+      .filter(f => f.title.trim())
+      .map(f => f.subtitle?.trim() ? `「${f.title}：${f.subtitle}」` : `「${f.title}」`)
+      .join('、')
+    if (feats) ad.push(`Up to three feature callouts: ${feats}`)
+  }
+  ad.push('High contrast text, balanced advertising layout, typography harmonized with the scene lighting.')
+  parts.push(ad.join('\n'))
+
+  parts.push(LEVEL2_NEGATIVE_PROMPT)
+  return parts.join('\n\n')
 }
