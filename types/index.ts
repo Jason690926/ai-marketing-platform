@@ -53,6 +53,13 @@ export interface SceneTemplate {
   promptBody: string
 }
 
+export interface AdContent {
+  title: string
+  subtitle?: string
+  endorsement?: string
+  features?: { title: string; subtitle?: string }[]
+}
+
 export interface GenerateImageRequest {
   mode: InputMode
   store: AssetStore
@@ -62,6 +69,8 @@ export interface GenerateImageRequest {
   stylePreset: StylePreset
   sizePreset: SizePreset
   additionalNotes?: string
+  level: 'level1' | 'level2'
+  adContent?: AdContent
 }
 
 export interface GenerateImageResponse {
