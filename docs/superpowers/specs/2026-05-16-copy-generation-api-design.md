@@ -1,84 +1,58 @@
-# 文案生成 API 設計（/api/generate/copy）
+# 文案生成 API 設計 v2（/api/generate/copy）
 
-- 日期：2026-05-16
-- 狀態：已核准，待實作
-- 範圍：AI 行銷平台 Phase 1 — 文案生成後端 + copy-tab 串接
+- 日期：2026-05-16（v2 取代 v1）
+- 狀態：v2 已核准，執行中
+- 範圍：AI 行銷平台 Phase 1 — 平台導向文案生成後端 + copy-tab 串接
 
-## 1. 目標
+> v2 變更原因：採用使用者提供的完整文案角色設定，改為「4 平台」交付模型，取代 v1 的 6-purpose / 固定 3 版設計。
 
-讓 copy-tab（UI 已完成、按鈕目前 disabled）能呼叫 Claude 產生品牌一致的繁體中文行銷文案，每次產出 3 個版本並自動存入中央素材庫，供行銷部後續審核與重用。
-
-## 2. 決策摘要
+## 1. 決策摘要（v2）
 
 | 項目 | 決策 |
 |------|------|
-| AI 供應商 | Claude（Anthropic API），按 token 另計費（與 Claude 訂閱無關，需 `ANTHROPIC_API_KEY` + Console 儲值） |
-| 模型策略 | 可改的「用途→模型」設定表。預設：SEO 長文 / 品牌故事 / 商品介紹 → `claude-opus-4-7`；廣告 / 貼文 / Thread → `claude-sonnet-4-6` |
-| 版本數 | 每次生成 3 個版本 |
-| 儲存 | 生成即存，3 版本 = 3 筆 asset（status=draft）。需 migration 加 `content`、`model_used` 欄位 |
-| 輸入來源 | 純文字（門市/用途/場景/額外指示）+ 可選連結已生成圖的 `prompt_used`（文字情境，零 vision 成本） |
-| Vision/外部圖分析 | 本次不做（Phase 2）。架構保留選填 image 欄位，UI 上傳框標「即將推出」 |
-| 取向 | A：結構化 JSON、單次呼叫產 3 版、非串流 |
+| AI | Claude（Anthropic API），按 token 另計費，需 `ANTHROPIC_API_KEY` |
+| 平台分類 | `AssetPurpose` 改為 4 值：`google_ads` / `meta_ads` / `social_post`（粉專貼文）/ `line_push` |
+| 模型 | `PURPOSE_MODEL_MAP` 可改；4 平台預設皆 `claude-sonnet-4-6`（長文用途已移除） |
+| 產出模型 | 一次生成 = 一個平台的整包交付物 = **1 筆 asset**（非多筆）。`content` 存渲染後 Markdown，結構化分組回前端 |
+| 字數上限 | 規則寫進 system prompt，模型自律；MVP 不做硬驗證（YAGNI） |
+| 儲存 | 生成即存 1 筆 asset（status=draft），需 migration 加 `content`/`model_used`（002）與改 `purpose` CHECK（003） |
+| 輸入 | 純文字（門市/平台/情境/額外指示）+ 可選連結已生成圖 `prompt_used`；vision 延後 |
+| 取向 | 結構化 tool schema、單次呼叫、非串流 |
 
-## 3. 文案師角色設定（lib/prompts/copywriter.ts）
+## 2. 平台輸出結構
 
-`COPYWRITER_SYSTEM_PROMPT` 包含 5 部分，並注入現有 `BRAND_KNOWLEDGE`：
+| 平台 (`purpose`) | 群組 (key:數量) | 字數規則（中文） |
+|------------------|-----------------|------------------|
+| `google_ads` | short_headlines:15、long_headlines:5、descriptions:4、paths:2 | 短標≤15字、長標≤45字、說明≤45字、路徑≤7字（中文1字=2字元換算） |
+| `meta_ads` | primary_text:5、headlines:5、descriptions:5、cta:1 | 主文≤60字、標題≤20字(FB feed≤13)、說明12-15字、CTA 三選一 |
+| `social_post` | posts:3、hashtags:10-15 | 貼文150-300字、首句Hook、SEO/AEO/GEO、結尾互動/CTA |
+| `line_push` | push_titles:3、push_bodies:3、cta:1 | 標題≤20字、內文≤100字、CTA≤8字 |
 
-1. **專業人設**：資深品牌行銷文案，專精高端家居 / 精品床墊，熟台灣市場。
-2. **語言**：繁體中文、台灣在地用語；**禁簡體字與中國慣用語/思維**。
-3. **品牌語氣**：高端內斂・信賴感 — 強調德國近百年工藝、飯店背書（圓山飯店、澳門威尼斯人）、健康睡眠；用詞克制不浮誇，像精品品牌，非叫賣式促銷。
-4. **硬性禁用**：
-   - 嚴格療效護欄：禁止「治療 / 改善病症 / 醫療等級 / 保證健康」等醫療或療效宣稱，避免台灣不實廣告（公平交易法）風險。
-   - 不捏造未提供的數據、認證或事實。
-   - 不浮濫促銷感、不灌水。
-   - **不得抄襲競品文案或直接套用其句式；可參考競品訴求手法與切角，但須轉化為原創、更優、具 Musterring 差異化的內容**（突出本品牌獨有資產：德國工藝、飯店背書、核心材質、Oeko-Tex 認證）。
-5. **依用途切文體**：廣告短促有力 / SEO 長文資訊結構化 / 品牌故事敘事 / Thread 口語短串 / 商品介紹規格導向 / 貼文社群口吻。
+## 3. 文案師角色（lib/prompts/copywriter.ts → COPYWRITER_SYSTEM_PROMPT）
 
-`PURPOSE_MODEL_MAP`：`Record<AssetPurpose, string>`，預設如決策摘要；集中於此檔，改設定即可換模型，不動其他程式。
+採用使用者提供的完整角色全文，含：人設（台中中清專賣店資深行銷文案、熟台灣消費者）、語氣（專業但溫暖，朋友推薦非推銷）、核心訊息（德國近百年工藝＋飯店級健康睡眠）、CTA 導向預約試躺/到店體驗、信任元素（圓山飯店/威尼斯人/1938）、**賣點四段排序（感受→技術→背書→CTA，全平台通用）**、禁用詞（工廠直營/最便宜/破盤價/跳樓大拍賣/低價競爭/過度醫療承諾）、各平台規格、SEO/AEO/GEO、共用規則（文案風格依用途自動切換、每組變體切不同切入角度）。
 
-## 4. 元件與檔案
+額外保留既有護欄：繁體中文台灣用語、嚴禁簡體與中國慣用語；嚴格療效/醫療宣稱禁令；`BRAND_KNOWLEDGE` 為唯一事實來源。
 
-| 檔案 | 內容 | 新增/修改 |
-|------|------|-----------|
-| `lib/anthropic/client.ts` | `getAnthropic()` 單例（仿 `lib/openai/client.ts`） | 新增 |
-| `lib/prompts/copywriter.ts` | system prompt、`PURPOSE_MODEL_MAP`、各用途輸出 schema、`buildCopyBrief()` | 新增 |
-| `supabase/migrations/002_copy_content.sql` | `ALTER TABLE assets ADD COLUMN content TEXT; ADD COLUMN model_used TEXT;` | 新增 |
-| `types/index.ts` | `GenerateCopyRequest` / `GenerateCopyResponse` / `CopyVariant` | 修改 |
-| `app/api/generate/copy/route.ts` | 主邏輯 | 新增 |
-| `components/generator/copy-tab.tsx` | 接 API、loading、3 版卡片、複製按鈕、上傳框標 Phase 2 | 修改 |
-| `package.json` | 新增依賴 `@anthropic-ai/sdk`（**安裝前查證 publisher 與安全性**） | 修改 |
-| `.env.local` / `.env.local.example` | 新增 `ANTHROPIC_API_KEY` | 修改 |
+## 4. 元件與檔案（v2）
 
-## 5. 資料流
+| 檔案 | 動作 |
+|------|------|
+| `lib/anthropic/client.ts` | 已建（T2，不動） |
+| `package.json` / env | 已建（T1，不動） |
+| `supabase/migrations/002_copy_content.sql` | 已建（T4，不動） |
+| `types/index.ts` | 改 `AssetPurpose` 為 4 平台值；改 copy 回應型別為分組模型 |
+| `supabase/migrations/003_purpose_v2.sql` | 新增：改 `assets_purpose_check`（用 NOT VALID 避免舊列驗證失敗） |
+| `app/api/generate/image/route.ts` | 修：硬寫的 `purpose: 'post'` → `'social_post'`（避免違反新 CHECK） |
+| `lib/prompts/copywriter.ts` | 改寫：v2 system prompt + `PLATFORM_GROUPS` + `PURPOSE_MODEL_MAP` + `buildCopyBrief` |
+| `app/api/generate/copy/route.ts` | 改寫：依平台群組動態建 tool schema、單次呼叫、存 1 筆 asset |
+| `components/generator/copy-tab.tsx` | 改寫：4 平台選擇、分組結果呈現、參考圖標 Phase 2 |
 
-1. copy-tab 表單送出 → `POST /api/generate/copy`
-   body：`{ store, purpose, sceneId?, sceneDesc?, instructions?, linkedImageAssetId? }`
-2. route：`createClient()` 取 user；無 → 401。
-3. 驗證必填 `store`、`purpose`；缺 → 400。
-4. 若帶 `linkedImageAssetId`：查該 asset 的 `prompt_used`，作為文字情境（不送圖、零 vision）。
-5. 依 `PURPOSE_MODEL_MAP[purpose]` 選模型。
-6. 組訊息：system = `COPYWRITER_SYSTEM_PROMPT` + `BRAND_KNOWLEDGE`（靜態區塊開 prompt caching）；user = `buildCopyBrief()` 產生的結構化需求（用途、場景模板 promptBody 或自由描述、額外指示、連結圖情境）。
-7. 單次 Anthropic 呼叫，用 tool input schema 約束輸出為「3 個版本、每版依該用途的欄位結構」。
-8. 解析結果；解析失敗 → 以更嚴格指示重試 1 次；再失敗 → 502。
-9. 每個版本：把結構化欄位組成可讀文字寫入 `content`，插入一筆 asset（`type` 依用途映射、`store`、`purpose`、`content`、`prompt_used`=brief、`model_used`、`status='draft'`、`source='ai_generated'`）。
-10. 回 `GenerateCopyResponse { variants: CopyVariant[], error? }`，每個 variant 含 `assetId` 與結構化欄位供前端漂亮呈現。
-
-## 6. 各用途輸出結構
-
-| purpose | 結構欄位 | asset.type |
-|---------|----------|-----------|
-| ad | hook, headline, subhead, body, cta | copy |
-| post | caption, hashtags[] | copy |
-| thread | posts[]（每則短文） | thread_post |
-| web_brand | title, body（敘事段落） | copy |
-| web_product | title, spec_highlights[], body | copy |
-| seo_article | title, meta_description, outline[], body | article |
-
-DB `content` 存組合後的可讀文字（Markdown）；前端同時拿結構化欄位呈現。
-
-## 7. API 契約（types/index.ts）
+## 5. API 契約（types/index.ts v2）
 
 ```ts
+export type AssetPurpose = 'google_ads' | 'meta_ads' | 'social_post' | 'line_push'
+
 export interface GenerateCopyRequest {
   store: AssetStore
   purpose: AssetPurpose
@@ -88,57 +62,37 @@ export interface GenerateCopyRequest {
   linkedImageAssetId?: string
 }
 
-export interface CopyVariant {
-  assetId: string
-  purpose: AssetPurpose
-  fields: Record<string, string | string[]>  // 依用途結構
-  content: string                              // 組合後可讀文字
+export interface CopyGroup {
+  key: string
+  label: string
+  items: string[]
 }
 
 export interface GenerateCopyResponse {
-  variants: CopyVariant[]
+  assetId?: string
+  purpose?: AssetPurpose
+  groups: CopyGroup[]
+  content?: string
   error?: string
 }
 ```
 
-## 8. 錯誤處理
+## 6. 資料流
 
-| 情境 | 行為 |
-|------|------|
-| 未登入 | 401 `{ variants: [], error: 'Unauthorized' }` |
-| 缺 store/purpose | 400 |
-| Claude API 失敗 | 502，回模型錯誤訊息 |
-| JSON 解析失敗 | 自動重試 1 次（更嚴格指示）；再失敗 502「模型輸出格式異常」 |
-| 部分 DB 寫入失敗 | 回已成功 variants + error（比照 `/api/generate/image`） |
-| 缺 `ANTHROPIC_API_KEY` | 502，明確提示需設定金鑰 |
+copy-tab → `POST /api/generate/copy {store, purpose, sceneId?, sceneDesc?, instructions?, linkedImageAssetId?}` → 認證(401) → 驗證 store/purpose(400) → 缺 `ANTHROPIC_API_KEY`(502) → 解析情境（場景模板 promptBody 或 sceneDesc；linkedImageAssetId→prompt_used 文字）→ `PURPOSE_MODEL_MAP[purpose]` 選模型 → 依 `PLATFORM_GROUPS[purpose]` 動態組 tool input_schema（每群組 array、min/max、guidance）→ 單次 Anthropic 呼叫（system 開 prompt caching）→ 解析 tool_use（失敗重試 1 次，再失敗 502）→ 渲染 `content` Markdown → 插入 1 筆 asset（type=`copy`）→ 回 `{assetId, purpose, groups, content}`。
 
-route 設定：`export const runtime = 'nodejs'`、`export const maxDuration = 120`。
+## 7. 錯誤處理
 
-## 9. 成本控制
+401 未登入｜400 缺/非法 store·purpose｜502 缺金鑰｜502 Claude 失敗｜解析失敗重試 1 次再 502｜DB 寫入失敗 500（回已產生 groups + error）。`runtime='nodejs'`、`maxDuration=120`。
 
-- 單次呼叫產 3 版，共用 system + 品牌知識 token。
-- 靜態 system + `BRAND_KNOWLEDGE` 區塊啟用 Anthropic prompt caching，重複呼叫大幅降低輸入成本。
-- 模型可經 `PURPOSE_MODEL_MAP` 調整；預設短文走較便宜的 Sonnet。
-- `model_used` 落庫，便於日後成本對帳。
+## 8. 範圍外（Phase 2，架構留門）
 
-## 10. 本次範圍外（Phase 2，架構已留門）
+vision/外部圖上傳分析（UI 標即將推出）；字數硬驗證；串流；單組重生；copy-tab 不提供 linkedImage 選圖 UI（API 已支援）。
 
-- Vision / 外部上傳圖分析（copy-tab 上傳框標「即將推出」）。
-- `linkedImageAssetId` 為 API 層能力（已實作於 route），但 **copy-tab MVP 不提供挑選已生成圖的 UI**；該欄位供 Phase 2「為這張圖寫文案」介面使用。本次前端一律不帶此欄位。
-- 串流輸出。
-- 單一版本「重新生成」。
-- 手動「加入素材庫」（本設計改為自動存草稿）。
+## 9. 測試與驗收
 
-## 11. 測試與驗收
+`npx tsc --noEmit` 0 錯誤；最終 `npx next build` 通過且列出 `ƒ /api/generate/copy`；4 平台各能產出符合群組數量的結構；未登入 curl=401；缺金鑰優雅 502。
 
-- `npx tsc --noEmit` 0 錯誤；`npx next build` 通過。
-- 6 種用途各能產生 3 個結構正確的版本。
-- Supabase 金鑰有效時：3 筆 asset 寫入，素材庫（/api/assets、library-client）能看到 type=copy/article/thread_post 的文案。
-- 缺 `ANTHROPIC_API_KEY` 時優雅報錯，不致 crash。
-- copy-tab：loading 狀態、3 版卡片、複製按鈕可用；上傳框顯示 Phase 2 標示。
+## 10. 前置依賴（不擋實作，影響實測）
 
-## 12. 已知前置依賴（不擋本設計，但影響實測）
-
-- Anthropic API 金鑰 + Console 儲值需另行設定。
-- Supabase 金鑰先前疑似無效；migration 002 與落庫實測需待金鑰處理。
-- `@anthropic-ai/sdk` 安裝前依使用者規矩先查證 publisher。
+`ANTHROPIC_API_KEY` + Console 儲值；Supabase 金鑰與 migrations 002/003 須於 Supabase 執行；既有舊 purpose 資料列（若有）需清理或靠 003 的 NOT VALID 容忍。
