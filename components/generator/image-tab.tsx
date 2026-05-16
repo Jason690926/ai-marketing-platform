@@ -90,6 +90,7 @@ export function ImageTab() {
   // For Level 2: count distinct orientations selected → API call count
   const selectedOrients = [...new Set(SIZES.filter(s => sizes.includes(s.value)).map(s => s.orient))]
   const apiCallCount = level === 'level2' ? sizes.length : selectedOrients.length
+  const level2NeedsTitle = level === 'level2' && !adTitle.trim()
 
   function addFeature() {
     if (adFeatures.length < 3) setAdFeatures([...adFeatures, { title: '', subtitle: '' }])
@@ -122,6 +123,21 @@ export function ImageTab() {
       stylePreset: (style === 'custom' ? 'auto' : style) as StylePreset,
       sizePreset,
       additionalNotes: notes || undefined,
+      level,
+      adContent:
+        level === 'level2'
+          ? {
+              title: adTitle.trim(),
+              subtitle: adSubtitle.trim() || undefined,
+              endorsement: adEndorsement.trim() || undefined,
+              features: adFeatures
+                .filter(f => f.title.trim())
+                .map(f => ({
+                  title: f.title.trim(),
+                  subtitle: f.subtitle.trim() || undefined,
+                })),
+            }
+          : undefined,
     }
   }
 
@@ -368,27 +384,26 @@ export function ImageTab() {
         )}
       </div>
 
-      {level === 'level2' && (
-        <p className="text-xs text-amber-600 dark:text-amber-500">
-          Level 2 完整廣告（含廣告文字直出）尚未串接，目前僅支援 Level 1 底圖生成。
-        </p>
-      )}
-
       <Button
         className="w-full"
         size="lg"
         onClick={handleGenerate}
-        disabled={loading || level === 'level2' || sizes.length === 0}
+        disabled={loading || sizes.length === 0 || level2NeedsTitle}
       >
         {loading ? (
           <span className="flex items-center gap-2">
             <Loader2 size={16} className="animate-spin" />
             {progress || '產生中...'}
           </span>
+        ) : level === 'level2' ? (
+          `產生完整廣告（${apiCallCount} 次 API 呼叫）`
         ) : (
           `產生底圖（${apiCallCount} 次 API 呼叫）`
         )}
       </Button>
+      {level2NeedsTitle && (
+        <p className="text-xs text-muted-foreground">Level 2 需先填「廣告標題」才能產生。</p>
+      )}
 
       {error && (
         <p className="text-sm text-destructive rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3">
