@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.96.0",
     "@aws-sdk/client-s3": "^3.1045.0",
     "@base-ui/react": "^1.4.1",
     "@radix-ui/react-avatar": "^1.1.11",
