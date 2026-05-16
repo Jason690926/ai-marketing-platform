@@ -5,7 +5,7 @@ import { SCENE_TEMPLATES } from '@/lib/prompts/scene-templates'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { PenLine, ImagePlus, X, Loader2, Copy as CopyIcon } from 'lucide-react'
+import { PenLine, ImagePlus, Loader2, Copy as CopyIcon } from 'lucide-react'
 import type { AssetStore, AssetPurpose, GenerateCopyRequest, GenerateCopyResponse, CopyGroup } from '@/types'
 
 const STORES: { value: AssetStore; label: string }[] = [
