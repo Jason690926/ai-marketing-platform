@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { getOpenAI } from '@/lib/openai/client'
 import { uploadToR2 } from '@/lib/r2/client'
-import { buildPrompt, getSceneById } from '@/lib/prompts/scene-templates'
+import { buildPrompt, buildLevel2Prompt, getSceneById } from '@/lib/prompts/scene-templates'
 import type {
   GenerateImageRequest,
   GenerateImageResponse,
@@ -69,7 +69,17 @@ export async function POST(req: Request) {
     stylePreset,
     sizePreset,
     additionalNotes,
+    level,
+    adContent,
   } = body
+
+  const lvl = level === 'level2' ? 'level2' : 'level1'
+  if (lvl === 'level2' && !adContent?.title?.trim()) {
+    return NextResponse.json<GenerateImageResponse>(
+      { assets: [], error: 'Level 2 需填廣告標題' },
+      { status: 400 }
+    )
+  }
 
   if (!mode || !store || !stylePreset || !sizePreset) {
     return NextResponse.json<GenerateImageResponse>(
@@ -81,13 +91,23 @@ export async function POST(req: Request) {
   const sceneTemplate =
     mode === 'scene' && sceneId ? getSceneById(sceneId) : undefined
 
-  const prompt = buildPrompt({
-    mode,
-    sceneTemplate,
-    freeformDescription,
-    stylePreset,
-    additionalNotes,
-  })
+  const prompt =
+    lvl === 'level2'
+      ? buildLevel2Prompt({
+          mode,
+          sceneTemplate,
+          freeformDescription,
+          stylePreset,
+          additionalNotes,
+          adContent: adContent!,
+        })
+      : buildPrompt({
+          mode,
+          sceneTemplate,
+          freeformDescription,
+          stylePreset,
+          additionalNotes,
+        })
 
   const { width, height, gptSize, aspectRatio } = parsePreset(sizePreset)
 
@@ -128,7 +148,7 @@ export async function POST(req: Request) {
         store,
         purpose: 'social_post',
         image_url: imageUrl,
-        image_level: 'level1_base',
+        image_level: lvl === 'level2' ? 'level2_complete' : 'level1_base',
         aspect_ratio: aspectRatio,
         width,
         height,
