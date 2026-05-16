@@ -3,8 +3,14 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Sparkles, Images, LogOut, Image, FileText } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
-const NAV = [
+type NavChild = { href: string; label: string; icon: LucideIcon }
+type NavItem =
+  | { label: string; icon: LucideIcon; children: NavChild[] }
+  | { label: string; icon: LucideIcon; href: string }
+
+const NAV: NavItem[] = [
   {
     label: '素材產生器',
     icon: Sparkles,

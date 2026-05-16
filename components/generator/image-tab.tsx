@@ -6,8 +6,16 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import { PenLine, Plus, X } from 'lucide-react'
-import type { AssetStore, StylePreset, SizePreset } from '@/types'
+import { PenLine, Plus, X, Loader2, Download } from 'lucide-react'
+import type {
+  AssetStore,
+  StylePreset,
+  SizePreset,
+  InputMode,
+  GenerateImageRequest,
+  GenerateImageResponse,
+  Asset,
+} from '@/types'
 
 type Level = 'level1' | 'level2'
 type Mode  = 'scene' | 'reference' | 'freeform'
@@ -72,6 +80,11 @@ export function ImageTab() {
   const [adEndorsement, setAdEndorsement] = useState('')
   const [adFeatures,    setAdFeatures]    = useState<AdFeature[]>([{ title: '', subtitle: '' }])
 
+  const [loading,  setLoading]  = useState(false)
+  const [progress, setProgress] = useState('')
+  const [error,    setError]    = useState<string | null>(null)
+  const [results,  setResults]  = useState<Asset[]>([])
+
   const isFreeformScene = sceneId === 'freeform'
 
   // For Level 2: count distinct orientations selected → API call count
@@ -86,6 +99,65 @@ export function ImageTab() {
   }
   function updateFeature(i: number, field: keyof AdFeature, val: string) {
     setAdFeatures(adFeatures.map((f, idx) => idx === i ? { ...f, [field]: val } : f))
+  }
+
+  function buildRequest(sizePreset: SizePreset): GenerateImageRequest {
+    // Scene "freeform" card behaves like freeform mode for the API.
+    const effectiveMode: InputMode =
+      mode === 'scene' && isFreeformScene ? 'freeform' : mode
+
+    const notes = [
+      mode === 'scene' && !isFreeformScene ? description.trim() : '',
+      style === 'custom' ? styleDesc.trim() : '',
+    ].filter(Boolean).join('. ')
+
+    return {
+      mode: effectiveMode,
+      store,
+      sceneId: mode === 'scene' && !isFreeformScene ? sceneId : undefined,
+      freeformDescription:
+        effectiveMode === 'freeform'
+          ? (mode === 'freeform' ? freeformDesc : description).trim()
+          : undefined,
+      stylePreset: (style === 'custom' ? 'auto' : style) as StylePreset,
+      sizePreset,
+      additionalNotes: notes || undefined,
+    }
+  }
+
+  async function handleGenerate() {
+    setError(null)
+    setResults([])
+    setLoading(true)
+    const collected: Asset[] = []
+    try {
+      // Level 1: one API call per distinct orientation (shared base image,
+      // cropped per size client-side later). Here we call per selected size
+      // to keep within the typed GenerateImageRequest contract.
+      const targets = level === 'level1'
+        ? [...new Set(SIZES.filter(s => sizes.includes(s.value)).map(s => s.value))]
+        : sizes
+      let done = 0
+      for (const size of targets) {
+        setProgress(`產生中 ${++done}/${targets.length}（${size}）...`)
+        const res = await fetch('/api/generate/image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildRequest(size)),
+        })
+        const data: GenerateImageResponse = await res.json()
+        if (!res.ok || data.error) {
+          throw new Error(data.error || `生成失敗（HTTP ${res.status}）`)
+        }
+        collected.push(...data.assets)
+        setResults([...collected])
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '生成失敗')
+    } finally {
+      setLoading(false)
+      setProgress('')
+    }
   }
 
   return (
@@ -296,11 +368,58 @@ export function ImageTab() {
         )}
       </div>
 
-      <Button className="w-full" size="lg" disabled>
-        {level === 'level1'
-          ? `產生底圖（${apiCallCount} 次 API 呼叫・API 串接中）`
-          : `產生完整廣告（${apiCallCount} 次 API 呼叫・API 串接中）`}
+      {level === 'level2' && (
+        <p className="text-xs text-amber-600 dark:text-amber-500">
+          Level 2 完整廣告（含廣告文字直出）尚未串接，目前僅支援 Level 1 底圖生成。
+        </p>
+      )}
+
+      <Button
+        className="w-full"
+        size="lg"
+        onClick={handleGenerate}
+        disabled={loading || level === 'level2' || sizes.length === 0}
+      >
+        {loading ? (
+          <span className="flex items-center gap-2">
+            <Loader2 size={16} className="animate-spin" />
+            {progress || '產生中...'}
+          </span>
+        ) : (
+          `產生底圖（${apiCallCount} 次 API 呼叫）`
+        )}
       </Button>
+
+      {error && (
+        <p className="text-sm text-destructive rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3">
+          {error}
+        </p>
+      )}
+
+      {results.length > 0 && (
+        <div className="space-y-3">
+          <Label className="text-sm font-medium block">
+            產生結果 <span className="font-normal text-muted-foreground text-xs">（{results.length} 張・已存入素材庫）</span>
+          </Label>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {results.map(a => (
+              <div key={a.id} className="group relative rounded-lg border border-border overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={a.image_url ?? ''} alt={a.prompt_used ?? 'generated'} className="w-full aspect-square object-cover" />
+                <a
+                  href={a.image_url ?? '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download
+                  className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-background/90 px-2.5 py-1.5 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Download size={12} /> 下載
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
