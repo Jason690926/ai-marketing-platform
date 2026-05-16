@@ -68,3 +68,24 @@ export interface GenerateImageResponse {
   assets: Asset[]
   error?: string
 }
+
+export interface GenerateCopyRequest {
+  store: AssetStore
+  purpose: AssetPurpose
+  sceneId?: string
+  sceneDesc?: string
+  instructions?: string
+  linkedImageAssetId?: string
+}
+
+export interface CopyVariant {
+  assetId: string
+  purpose: AssetPurpose
+  fields: Record<string, string | string[]>
+  content: string
+}
+
+export interface GenerateCopyResponse {
+  variants: CopyVariant[]
+  error?: string
+}
