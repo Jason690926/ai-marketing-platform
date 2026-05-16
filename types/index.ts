@@ -10,7 +10,7 @@ export interface AppUser {
 
 export type AssetType = 'image' | 'copy' | 'article' | 'thread_post'
 export type AssetStore = 'mattress' | 'bedding'
-export type AssetPurpose = 'ad' | 'post' | 'web_brand' | 'web_product' | 'seo_article' | 'thread'
+export type AssetPurpose = 'google_ads' | 'meta_ads' | 'social_post' | 'line_push'
 export type AssetStatus = 'draft' | 'pending' | 'approved' | 'rejected'
 export type AssetSource = 'ai_generated' | 'user_uploaded' | 'reference_remix'
 export type ImageLevel = 'level1_base' | 'level2_complete'
@@ -78,14 +78,16 @@ export interface GenerateCopyRequest {
   linkedImageAssetId?: string
 }
 
-export interface CopyVariant {
-  assetId: string
-  purpose: AssetPurpose
-  fields: Record<string, string | string[]>
-  content: string
+export interface CopyGroup {
+  key: string
+  label: string
+  items: string[]
 }
 
 export interface GenerateCopyResponse {
-  variants: CopyVariant[]
+  assetId?: string
+  purpose?: AssetPurpose
+  groups: CopyGroup[]
+  content?: string
   error?: string
 }
