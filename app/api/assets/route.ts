@@ -35,6 +35,8 @@ export async function GET(req: Request) {
   const store = searchParams.get('store')
   const status = searchParams.get('status')
   const q = searchParams.get('q')?.trim()
+  const from = searchParams.get('from')
+  const to = searchParams.get('to')
   const limit = Math.min(Number(searchParams.get('limit')) || 60, 200)
 
   let query = supabase
@@ -48,6 +50,8 @@ export async function GET(req: Request) {
   if (store) query = query.eq('store', store)
   if (status) query = query.eq('status', status)
   if (q) query = query.ilike('prompt_used', `%${q}%`)
+  if (from) query = query.gte('created_at', from)
+  if (to)   query = query.lte('created_at', to)
 
   const { data, error } = await query
 
