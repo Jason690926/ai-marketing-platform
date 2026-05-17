@@ -29,6 +29,9 @@ export interface Asset {
   width: number | null
   height: number | null
   prompt_used: string | null
+  // copy / text fields
+  content: string | null
+  model_used: string | null
   // review
   status: AssetStatus
   review_note: string | null

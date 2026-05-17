@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Loader2, Download, Star } from 'lucide-react'
+import { Loader2, Download, Star, Copy as CopyIcon } from 'lucide-react'
 import type { Asset, AssetType, AssetStore, AssetStatus } from '@/types'
 
 const TYPES: { value: AssetType | ''; label: string }[] = [
@@ -121,8 +121,18 @@ export function LibraryClient() {
                   </a>
                 </div>
               ) : (
-                <div className="aspect-square p-4 text-xs text-muted-foreground overflow-hidden">
-                  {a.prompt_used ?? '（無預覽）'}
+                <div className="relative">
+                  <div className="h-48 p-4 text-xs text-foreground overflow-y-auto whitespace-pre-wrap">
+                    {a.content ?? a.prompt_used ?? '（無內容）'}
+                  </div>
+                  {a.content && (
+                    <button
+                      onClick={() => navigator.clipboard.writeText(a.content!)}
+                      className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-background/90 px-2.5 py-1.5 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <CopyIcon size={12} /> 複製全部
+                    </button>
+                  )}
                 </div>
               )}
               <div className="flex items-center justify-between px-3 py-2 text-xs">
