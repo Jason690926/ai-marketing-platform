@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
-import { getOpenAI } from '@/lib/openai/client'
+import { getOpenAI, getImageModel } from '@/lib/openai/client'
 import { uploadToR2 } from '@/lib/r2/client'
 import { buildPrompt, buildLevel2Prompt, getSceneById } from '@/lib/prompts/scene-templates'
 import type {
@@ -11,12 +11,12 @@ import type {
 } from '@/types'
 
 export const runtime = 'nodejs'
-// gpt-image-1 generations are slow; allow up to 5 min on Vercel.
+// gpt-image generations (esp. quality:high) are slow; allow up to 5 min on Vercel.
 export const maxDuration = 300
 
 const IMAGE_COUNT = 3
 
-/** gpt-image-1 only accepts these sizes — map our presets by orientation. */
+/** Safe size subset accepted by all gpt-image models — map presets by orientation. */
 type GptImageSize = '1024x1024' | '1024x1536' | '1536x1024'
 
 function parsePreset(preset: SizePreset): {
@@ -114,7 +114,7 @@ export async function POST(req: Request) {
   let images: { b64_json?: string }[]
   try {
     const result = await getOpenAI().images.generate({
-      model: 'gpt-image-1',
+      model: getImageModel(lvl),
       prompt,
       n: IMAGE_COUNT,
       size: gptSize,
