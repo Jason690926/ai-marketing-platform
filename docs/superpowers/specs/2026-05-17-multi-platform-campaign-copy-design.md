@@ -175,3 +175,17 @@ CREATE INDEX IF NOT EXISTS idx_assets_campaign_id ON assets(campaign_id);
 - 無 UI 模式開關（分流由後端依平台數自動決定）。
 - 不引入 JSON 欄位、不做活動級審核流程、不做時間軸式分組視圖（僅期間篩選）。
 - 不改動圖片生成、不改 `/api/generate/copy`（分支 0 與其共用單平台邏輯，但端點本身不動）。
+- **活動文案不含長文/內容型**（品牌故事/商品介紹/SEO 文章/Thread）。活動僅限現有 4 投放管道短文案。
+
+## 9. 已知後續工作（Workstream A — 本 spec 範圍外）
+
+v2（migration `003_purpose_v2.sql`）把 purpose 從舊 6 類縮成 4 投放管道時，**移除了 4 種長文/內容型能力**，使用者確認仍需要：
+
+| 舊 purpose | 內容 | 結構特性 |
+|---|---|---|
+| `web_brand` 品牌故事 | 官網品牌介紹 | 敘事散文長文 |
+| `web_product` 商品介紹 | 商品頁規格說明 | 規格/賣點條列 |
+| `seo_article` SEO 文章 | 關鍵字優化長文 | 含大小標的長文 |
+| `thread` Thread 貼文 | Threads 短文串 | 連續短文串 |
+
+**決策（使用者 2026-05-17）**：先完成本 spec（B，多平台活動文案），**A 為獨立後續工作**，B 完成後另開 spec → plan → 實作。A **不併入活動**（這些內容型本質獨立，輸出結構與 4 平台短文案不同，需各自的 prompt 與輸出 schema）。此處僅記錄以免遺忘，不在本 spec 設計。
