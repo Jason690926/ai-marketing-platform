@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Loader2, Download, Star, Copy as CopyIcon, ChevronRight } from 'lucide-react'
+import { Loader2, Download, Star, Copy as CopyIcon, ChevronRight, Trash2 } from 'lucide-react'
 import type { Asset, AssetType, AssetStore, AssetStatus, CampaignWithAssets } from '@/types'
 
 const TYPES: { value: AssetType | ''; label: string }[] = [
@@ -39,9 +39,23 @@ const PURPOSE_LABEL: Record<string, string> = {
 
 const storeLabel = (s: AssetStore) => (s === 'mattress' ? '床墊' : '寢具')
 
-function AssetContentCard({ a }: { a: Asset }) {
+function AssetContentCard({ a, onDeleted }: { a: Asset; onDeleted: (id: string) => void }) {
+  const handleDelete = async () => {
+    if (!window.confirm('確定刪除這筆素材？此動作無法復原')) return
+    const res = await fetch(`/api/assets/${a.id}`, { method: 'DELETE' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || data.error) { alert(data.error || `刪除失敗（HTTP ${res.status}）`); return }
+    onDeleted(a.id)
+  }
   return (
-    <div className="group rounded-lg border border-border overflow-hidden">
+    <div className="group relative rounded-lg border border-border overflow-hidden">
+      <button
+        onClick={handleDelete}
+        aria-label="刪除素材"
+        className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-md bg-background/90 px-2 py-1.5 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive"
+      >
+        <Trash2 size={12} />
+      </button>
       <div className="px-3 pt-2">
         <span className="inline-block rounded bg-primary/10 text-primary text-xs px-2 py-0.5 font-medium">
           {PURPOSE_LABEL[a.purpose] ?? a.purpose}
@@ -188,6 +202,11 @@ export function LibraryClient() {
     setSelectedCampaignId(null)
   }
 
+  const handleDeleted = (id: string) => {
+    setAssets(prev => prev.filter(x => x.id !== id))
+    setCampaigns(prev => prev.map(cw => ({ ...cw, assets: cw.assets.filter(x => x.id !== id) })))
+  }
+
   const singleAssets = assets.filter(a => a.campaign_id === null)
 
   return (
@@ -308,7 +327,7 @@ export function LibraryClient() {
             <p className="text-xs text-muted-foreground text-center py-4">此活動尚無素材</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {selectedCampaign.assets.map(a => <AssetContentCard key={a.id} a={a} />)}
+              {selectedCampaign.assets.map(a => <AssetContentCard key={a.id} a={a} onDeleted={handleDeleted} />)}
             </div>
           )}
         </div>
@@ -321,7 +340,7 @@ export function LibraryClient() {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {singleAssets.map(a => <AssetContentCard key={a.id} a={a} />)}
+            {singleAssets.map(a => <AssetContentCard key={a.id} a={a} onDeleted={handleDeleted} />)}
           </div>
         )
       )}
