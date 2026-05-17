@@ -29,6 +29,7 @@ export interface Asset {
   width: number | null
   height: number | null
   prompt_used: string | null
+  campaign_id: string | null
   // copy / text fields
   content: string | null
   model_used: string | null
@@ -102,4 +103,50 @@ export interface GenerateCopyResponse {
   groups: CopyGroup[]
   content?: string
   error?: string
+}
+
+export interface CampaignAxis {
+  big_idea: string
+  selling_points: string[]
+  tone: string
+  audience: string
+}
+
+export interface Campaign extends CampaignAxis {
+  id: string
+  user_id: string
+  store: AssetStore
+  scene_id: string | null
+  scene_desc: string | null
+  instructions: string | null
+  model_used: string | null
+  created_at: string
+}
+
+export interface GenerateCampaignRequest {
+  store: AssetStore
+  platforms: AssetPurpose[]
+  sceneId?: string
+  sceneDesc?: string
+  instructions?: string
+  campaignId?: string
+  axis?: CampaignAxis
+}
+
+export interface CampaignPlatformResult {
+  purpose: AssetPurpose
+  groups: CopyGroup[]
+  assetId: string
+}
+
+export interface GenerateCampaignResponse {
+  campaignId: string | null
+  axis: CampaignAxis | null
+  results: CampaignPlatformResult[]
+  errors: { purpose: AssetPurpose; message: string }[]
+}
+
+export interface CampaignWithAssets {
+  campaign: Campaign
+  assets: Asset[]
 }
