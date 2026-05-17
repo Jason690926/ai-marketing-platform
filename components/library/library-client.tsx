@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Loader2, Download, Star, Copy as CopyIcon, ChevronDown, ChevronRight } from 'lucide-react'
+import { Loader2, Download, Star, Copy as CopyIcon, ChevronRight } from 'lucide-react'
 import type { Asset, AssetType, AssetStore, AssetStatus, CampaignWithAssets } from '@/types'
 
 const TYPES: { value: AssetType | ''; label: string }[] = [
@@ -32,11 +32,21 @@ const PERIODS: { value: Period; label: string }[] = [
   { value: 'custom', label: '自訂' },
 ]
 
+const PURPOSE_LABEL: Record<string, string> = {
+  google_ads: 'Google 廣告', meta_ads: 'Meta 廣告',
+  social_post: '粉專貼文', line_push: 'LINE 推播',
+}
+
 const storeLabel = (s: AssetStore) => (s === 'mattress' ? '床墊' : '寢具')
 
 function AssetContentCard({ a }: { a: Asset }) {
   return (
     <div className="group rounded-lg border border-border overflow-hidden">
+      <div className="px-3 pt-2">
+        <span className="inline-block rounded bg-primary/10 text-primary text-xs px-2 py-0.5 font-medium">
+          {PURPOSE_LABEL[a.purpose] ?? a.purpose}
+        </span>
+      </div>
       {a.type === 'image' && a.image_url ? (
         <div className="relative">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -76,45 +86,14 @@ function AssetContentCard({ a }: { a: Asset }) {
   )
 }
 
-function CampaignCard({ cw }: { cw: CampaignWithAssets }) {
-  const [open, setOpen] = useState(false)
-  const c = cw.campaign
-  return (
-    <div className="rounded-lg border border-border overflow-hidden">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-muted/40 transition-colors"
-      >
-        <div className="min-w-0 space-y-1">
-          <p className="text-sm font-medium text-foreground truncate">{c.big_idea}</p>
-          <p className="text-xs text-muted-foreground">
-            {new Date(c.created_at).toLocaleDateString()} · {storeLabel(c.store)} · {cw.assets.length} 個平台
-          </p>
-        </div>
-        {open
-          ? <ChevronDown size={18} className="shrink-0 text-muted-foreground" />
-          : <ChevronRight size={18} className="shrink-0 text-muted-foreground" />}
-      </button>
-      {open && (
-        <div className="border-t border-border p-4">
-          {cw.assets.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">此活動尚無素材</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {cw.assets.map(a => <AssetContentCard key={a.id} a={a} />)}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 export function LibraryClient() {
   const [assets,  setAssets]  = useState<Asset[]>([])
   const [campaigns, setCampaigns] = useState<CampaignWithAssets[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
+
+  const [view, setView] = useState<'campaigns' | 'singles'>('campaigns')
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
 
   const [type,   setType]   = useState<AssetType | ''>('')
   const [store,  setStore]  = useState<AssetStore | ''>('')
@@ -193,21 +172,57 @@ export function LibraryClient() {
   const selectCls =
     'rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground'
 
-  const isEmpty = assets.length === 0 && campaigns.length === 0
+  const tabCls = (active: boolean) =>
+    `rounded-md px-4 py-1.5 text-sm ${
+      active
+        ? 'bg-primary text-primary-foreground'
+        : 'border border-border text-muted-foreground hover:text-foreground'
+    }`
+
+  // If the selected campaign no longer exists in data, reset to list.
+  const selectedCampaign =
+    selectedCampaignId !== null
+      ? campaigns.find(cw => cw.campaign.id === selectedCampaignId) ?? null
+      : null
+  if (selectedCampaignId !== null && !selectedCampaign && !loading) {
+    setSelectedCampaignId(null)
+  }
+
+  const singleAssets = assets.filter(a => a.campaign_id === null)
 
   return (
     <div className="space-y-6">
+      {/* Top-level tabs */}
+      <div className="flex gap-2">
+        <button
+          className={tabCls(view === 'campaigns')}
+          onClick={() => { setView('campaigns'); setSelectedCampaignId(null) }}
+        >
+          活動
+        </button>
+        <button
+          className={tabCls(view === 'singles')}
+          onClick={() => setView('singles')}
+        >
+          單篇素材
+        </button>
+      </div>
+
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
-        <select className={selectCls} value={type} onChange={e => setType(e.target.value as AssetType | '')}>
-          {TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <select className={selectCls} value={store} onChange={e => setStore(e.target.value as AssetStore | '')}>
-          {STORES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <select className={selectCls} value={status} onChange={e => setStatus(e.target.value as AssetStatus | '')}>
-          {STATUSES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        {view === 'singles' && (
+          <>
+            <select className={selectCls} value={type} onChange={e => setType(e.target.value as AssetType | '')}>
+              {TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <select className={selectCls} value={store} onChange={e => setStore(e.target.value as AssetStore | '')}>
+              {STORES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <select className={selectCls} value={status} onChange={e => setStatus(e.target.value as AssetStatus | '')}>
+              {STATUSES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </>
+        )}
         <select className={selectCls} value={period} onChange={e => setPeriod(e.target.value as Period)}>
           {PERIODS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
@@ -227,12 +242,14 @@ export function LibraryClient() {
             />
           </>
         )}
-        <input
-          className={`${selectCls} flex-1 min-w-[180px]`}
-          placeholder="搜尋 prompt 內容..."
-          value={q}
-          onChange={e => setQ(e.target.value)}
-        />
+        {view === 'singles' && (
+          <input
+            className={`${selectCls} flex-1 min-w-[180px]`}
+            placeholder="搜尋 prompt 內容..."
+            value={q}
+            onChange={e => setQ(e.target.value)}
+          />
+        )}
       </div>
 
       {loading && (
@@ -247,22 +264,66 @@ export function LibraryClient() {
         </p>
       )}
 
-      {!loading && !error && isEmpty && (
-        <div className="rounded-lg border border-border p-16 text-center text-muted-foreground text-sm">
-          尚無符合條件的素材
+      {!loading && !error && view === 'campaigns' && selectedCampaign === null && (
+        campaigns.length === 0 ? (
+          <div className="rounded-lg border border-border p-16 text-center text-muted-foreground text-sm">
+            尚無活動——至產生器勾選 2 個以上平台即可建立活動
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {campaigns.map(cw => (
+              <button
+                key={cw.campaign.id}
+                onClick={() => setSelectedCampaignId(cw.campaign.id)}
+                className="flex items-start justify-between gap-3 rounded-lg border border-border px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+              >
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm font-medium text-foreground truncate">{cw.campaign.big_idea}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(cw.campaign.created_at).toLocaleDateString()} · {storeLabel(cw.campaign.store)} · {cw.assets.length} 個管道
+                  </p>
+                </div>
+                <ChevronRight size={18} className="shrink-0 text-muted-foreground" />
+              </button>
+            ))}
+          </div>
+        )
+      )}
+
+      {!loading && !error && view === 'campaigns' && selectedCampaign !== null && (
+        <div className="space-y-4">
+          <button
+            onClick={() => setSelectedCampaignId(null)}
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            ← 返回活動列表
+          </button>
+          <div className="space-y-1">
+            <p className="text-base font-medium text-foreground">{selectedCampaign.campaign.big_idea}</p>
+            <p className="text-xs text-muted-foreground">
+              {new Date(selectedCampaign.campaign.created_at).toLocaleDateString()} · {storeLabel(selectedCampaign.campaign.store)}
+            </p>
+          </div>
+          {selectedCampaign.assets.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">此活動尚無素材</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {selectedCampaign.assets.map(a => <AssetContentCard key={a.id} a={a} />)}
+            </div>
+          )}
         </div>
       )}
 
-      {!loading && !error && campaigns.length > 0 && (
-        <div className="space-y-3">
-          {campaigns.map(cw => <CampaignCard key={cw.campaign.id} cw={cw} />)}
-        </div>
-      )}
-
-      {!loading && !error && assets.length > 0 && (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {assets.map(a => <AssetContentCard key={a.id} a={a} />)}
-        </div>
+      {!loading && !error && view === 'singles' && (
+        singleAssets.length === 0 ? (
+          <div className="rounded-lg border border-border p-16 text-center text-muted-foreground text-sm">
+            尚無單篇素材
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {singleAssets.map(a => <AssetContentCard key={a.id} a={a} />)}
+          </div>
+        )
       )}
     </div>
   )
