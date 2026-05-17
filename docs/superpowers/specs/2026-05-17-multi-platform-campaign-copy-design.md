@@ -23,7 +23,8 @@
 | 主軸形態 | 結構化：`大創意` + `主打賣點[]` + `語氣/切角` + `受眾/情境` |
 | 資料組織 | Campaign 活動群組：主軸獨立成記錄，各平台 asset 掛其下，主軸可重用補新平台 |
 | 刪活動 | `ON DELETE SET NULL`（保留已產文案，僅脫離群組） |
-| 產生器模式 | 不保留單平台快速模式，copy-tab 一律走活動流程；單選即「單平台活動」 |
+| 產生器模式 | 無模式開關；UI 僅「平台多選」，後端**依勾選數自動分流**：1 個＝快速單素材路徑（不生主軸、`campaign_id` NULL）；≥2 個＝活動流程 |
+| 單素材升級 | 不支援。單平台素材即純素材；要多平台請以多平台重新產生 |
 | 素材庫活動卡 | 預設收合 |
 | 素材庫時間 | 顯示日期 + 期間篩選（本月 / 近 30 天 / 自訂區間） |
 
@@ -87,31 +88,35 @@ CREATE INDEX IF NOT EXISTS idx_assets_campaign_id ON assets(campaign_id);
 }
 ```
 
-**流程分支**
+**流程分支（後端依勾選平台數與 `campaignId` 自動判斷，UI 無模式開關）**
 
-1. **新建活動**（無 `campaignId`）
+0. **單平台快速路徑**（`platforms.length === 1` 且無 `campaignId`）
+   - **不生主軸、不建 campaign**。直接對該平台一次呼叫（沿用 `PURPOSE_MODEL_MAP`/`PLATFORM_GROUPS`/`buildCopyBrief`，等同現有 `/api/generate/copy` 邏輯）。
+   - insert asset：`type:'copy'`、`purpose:平台`、`campaign_id` = **NULL**、`status:'draft'`、`source:'ai_generated'`。
+   - **不可升級**：此素材無 `campaignId`，分支 2/3 永不適用；要多平台請以 ≥2 平台重新產生。
+1. **新建活動**（`platforms.length >= 2`，無 `campaignId`）
    - ① Claude 呼叫（tool schema 產結構化主軸）→ insert `campaigns` 列。
-   - ② 對 `platforms` 每個平台各一次呼叫；沿用既有 per-platform tool schema、`PURPOSE_MODEL_MAP`、`PLATFORM_GROUPS`、`buildCopyBrief`。`system`（已 cache）+ 主軸放獨立 cache 區塊 → 同批多平台重用主軸快取。成功者 insert asset（`type:'copy'`、`purpose:平台`、`campaign_id`、`status:'draft'`、`source:'ai_generated'`）。
-2. **重衍生 / 補平台**（帶 `campaignId`，無 `axis`）
+   - ② 對 `platforms` 每個平台各一次呼叫；沿用既有 per-platform tool schema、`PURPOSE_MODEL_MAP`、`PLATFORM_GROUPS`、`buildCopyBrief`。`system`（已 cache）+ 主軸放獨立 cache 區塊 → 同批多平台重用主軸快取。成功者 insert asset（同上，但 `campaign_id` = 該 campaign）。
+2. **重衍生 / 補平台**（帶 `campaignId`，無 `axis`）— 僅適用活動（分支 1 產生者）
    - 讀既有 campaign 列（RLS 保證本人）→ **跳過 ①** → 只跑 ② 指定 `platforms`。補平台＝同端點帶該 `campaignId` + 新平台。
-3. **編輯主軸後重衍生**（帶 `campaignId` + `axis`）
+3. **編輯主軸後重衍生**（帶 `campaignId` + `axis`）— 僅適用活動
    - 先 `UPDATE campaigns` 為新 `axis` → 再跑 ② 指定 `platforms`（仍跳過 ①）。
 
-**Response**
+**Response**（分支 0 無活動，故 `campaignId`/`axis` 為 `null`）
 ```ts
 {
-  campaignId: string,
-  axis: { big_idea: string; selling_points: string[]; tone: string; audience: string },
+  campaignId: string | null,   // 分支 0 = null
+  axis: { big_idea: string; selling_points: string[]; tone: string; audience: string } | null, // 分支 0 = null
   results: { purpose: AssetPurpose; groups: CopyGroup[]; assetId: string }[],
   errors:  { purpose: AssetPurpose; message: string }[]
 }
 ```
 
 **要點**
+- **單平台（分支 0）不生主軸、不建活動、零額外成本**——等同舊單平台體驗，使用者不需選任何模式，後端依勾選數自動判斷。
 - 主軸 token 只在分支 1 花一次；分支 2/3 永不重跑 ①（落實「重衍生不重花主軸 token」）。
 - 新增的僅「產主軸」prompt 與 tool schema；其餘沿用，不重造。
-
-**取捨（已確認）**：因採純活動流程（無單平台快速模式），**即使只選一個平台也走分支 1**，仍會生成主軸（多一次 ① 呼叫）並建一筆 campaign。代價是每次文案生成多一次主軸推論；換得心智模型單一、無雙路徑維護、單素材日後也可補平台。此取捨已在設計討論中確認接受。
+- 內部雖有分支 0 與 1–3 兩條路徑，但 UI 與使用者心智仍單一（「選平台 → 產生」）；分支 0 與既有 `/api/generate/copy` 共用同一段單平台生成邏輯，不重造。
 
 ### 讀取端點
 
@@ -122,12 +127,11 @@ CREATE INDEX IF NOT EXISTS idx_assets_campaign_id ON assets(campaign_id);
 
 ### 產生器 `components/generator/copy-tab.tsx`
 
-- 投放平台改**多選**（複選 toggle）；門市/情境場景/額外指示等 brief 欄位不變。
-- 「產生文案」→ 呼叫 `/api/generate/campaign` 帶 `platforms[]`。
-- 結果頁：
-  - 頂部「核心創意主軸」卡，**預設收合**；展開可編輯 `大創意/主打賣點/語氣/受眾`，附「依此重新衍生」（帶 campaignId+axis，跳過①）。
-  - 各平台一區塊：文案分組 + 「複製全部」 + 「重新生成此平台」（帶 campaignId、單平台、跳過①）。
-  - 失敗平台另列一區 + 「重試此平台」。
+- 投放平台改**多選**（複選 toggle）；門市/情境場景/額外指示等 brief 欄位不變。無模式開關。
+- 「產生文案」→ 呼叫 `/api/generate/campaign` 帶 `platforms[]`；後端依數量自動分流。
+- 結果頁（依回應 `campaignId` 是否為 null 自動切換）：
+  - **單平台（`campaignId` = null）**：**不顯示主軸卡**；只一個平台區塊：文案分組 + 「複製全部」 + 「重新生成」（重打單平台，無 campaign）。
+  - **活動（≥2 平台）**：頂部「核心創意主軸」卡，**預設收合**；展開可編輯 `大創意/主打賣點/語氣/受眾`，附「依此重新衍生」（帶 campaignId+axis，跳過①）。各平台一區塊：文案分組 + 「複製全部」 + 「重新生成此平台」（帶 campaignId、單平台、跳過①）。失敗平台另列一區 + 「重試此平台」。
 
 ### 素材庫 `components/library/library-client.tsx`
 
@@ -139,8 +143,9 @@ CREATE INDEX IF NOT EXISTS idx_assets_campaign_id ON assets(campaign_id);
 
 | 情境 | 行為 |
 |------|------|
+| 單平台（分支 0）生成失敗 | 無活動可隔離；整個請求 502 + 訊息（等同現有單平台行為） |
 | 主軸生成失敗（①） | 不寫 campaign、不衍生；502 + 訊息（原子性，不留半殘活動） |
-| 某平台衍生失敗（②） | 隔離進 `errors[]`，成功平台照存照回；可帶 `campaignId` 重試失敗平台 |
+| 某平台衍生失敗（②，活動） | 隔離進 `errors[]`，成功平台照存照回；可帶 `campaignId` 重試失敗平台 |
 | 模型輸出格式異常 | 沿用現有「retry 一次」；二次仍失敗 → 進 `errors[]` |
 | 缺 `ANTHROPIC_API_KEY` | 與現況一致 502 訊息，前置不呼叫 |
 | `campaignId` 非本人/不存在 | RLS + 查無 → 404/403，不外洩他人活動 |
@@ -161,10 +166,12 @@ CREATE INDEX IF NOT EXISTS idx_assets_campaign_id ON assets(campaign_id);
    - 編輯主軸重衍生：確認跳過①（主軸 token 不重花）
    - 事後補平台：同活動帶 `campaignId` 加新平台成功掛入
    - 部分失敗：一平台失敗其餘照存、失敗可重試
+   - 單平台分支 0：只勾 1 平台 → 不生主軸、不建 campaign、結果頁無主軸卡、存成 `campaign_id = NULL` 素材
    - 向後相容：舊單素材（`campaign_id = NULL`）平鋪正常顯示
 
 ## 8. 不做（YAGNI）
 
-- 不保留單平台快速模式 / 不維護雙路徑。
+- 單平台素材**不支援事後升級為活動**；要多平台請以 ≥2 平台重新產生。
+- 無 UI 模式開關（分流由後端依平台數自動決定）。
 - 不引入 JSON 欄位、不做活動級審核流程、不做時間軸式分組視圖（僅期間篩選）。
-- 不改動圖片生成、不改 `/api/generate/copy`。
+- 不改動圖片生成、不改 `/api/generate/copy`（分支 0 與其共用單平台邏輯，但端點本身不動）。
