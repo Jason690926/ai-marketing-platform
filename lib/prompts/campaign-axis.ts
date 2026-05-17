@@ -40,10 +40,11 @@ export function buildAxisBrief(input: {
 /** Render an axis into the shared context block injected before per-platform derivation. */
 export function axisAsContext(axis: CampaignAxis): string {
   return [
-    `核心創意主軸（所有平台須一致沿用）：`,
+    `本次文案的最高指導原則——核心訴求、切角與賣點必須明確反映以下主軸，不可只是語氣沾邊：`,
     `- 大創意：${axis.big_idea}`,
     `- 主打賣點：${axis.selling_points.join('、')}`,
     `- 語氣/切角：${axis.tone}`,
     `- 受眾/情境：${axis.audience}`,
+    `寫作時請以「大創意」為主軸核心、「主打賣點」為必帶賣點，明確體現於標題與內文。`,
   ].join('\n')
 }

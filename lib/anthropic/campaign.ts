@@ -58,6 +58,7 @@ export async function derivePlatform(args: {
     purpose: args.purpose, store: args.store,
     sceneContext: args.sceneContext, instructions: args.instructions,
   })
+  const userContent = `${axisAsContext(args.axis)}\n\n────\n以下為產出規格，請在嚴格遵守上方主軸的前提下完成：\n${brief}`
   async function call() {
     return getAnthropic().messages.create({
       model: PURPOSE_MODEL_MAP[args.purpose],
@@ -68,7 +69,7 @@ export async function derivePlatform(args: {
       ],
       tools: [tool],
       tool_choice: { type: 'tool', name: 'submit_copy' },
-      messages: [{ role: 'user', content: brief }],
+      messages: [{ role: 'user', content: userContent }],
     })
   }
   function extract(msg: Awaited<ReturnType<typeof call>>): CopyGroup[] | null {
